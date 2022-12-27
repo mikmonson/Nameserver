@@ -2,9 +2,12 @@
 using ARSoft.Tools.Net;
 using ARSoft.Tools.Net.Dns;
 using MySqlConnector;
+using System;
+using System.Data;
 using System.Linq;
 using System.Net;
 using System.Reflection.PortableExecutable;
+using System.Runtime.CompilerServices;
 using System.Xml.Linq;
 
 namespace dnsresolver;
@@ -70,17 +73,80 @@ class DNSCache
         _ttl.Add(__ttl);
         _lastupdated.Add(DateTime.Now);
     }
-    
-
 }
+
 class Nameserver
 {
-    const string Constr = "Server=192.168.6.1;User ID=vScopeUserName;Password=password;Database=dns";
+    const string Constr = "Server=192.168.6.1;User ID=vScopeUserName;Password=password;Database=dns;";
     const string DNSserver1 = "8.8.8.8";
     const int MAX_UPD_CONNS = 1000;
     const int MAX_TCP_CONNS = 100;
     static public Dnsrules? rules;
     static public DNSCache? dnscache;
+
+    public static string IP_int2str(int ip)
+    {
+        string result = "";
+        int oct1 = 10;
+        int oct2 = 0;
+        int oct3 = 0;
+        int oct4 = 0;
+        oct2 = ip / 65536;
+        oct3 = (ip - oct2 * 65536) / 256;
+        oct4 = ip - oct2*65536 - oct3*256;
+        result = Convert.ToString(oct1) +"."+ Convert.ToString(oct2) + "." + Convert.ToString(oct3) + "." + Convert.ToString(oct4);
+        return result;
+    }
+    static async Task<string> AddNATAsync(string constr, string aname, string externalip)
+    {
+        //Make SQL query to get next usable ip for nat
+        Console.WriteLine("Making SQL query to nextips table...");
+        int ip = 0;
+        string IP = "";
+        bool persistent = true;
+        await using var connection = new MySqlConnection(constr);
+        await connection.OpenAsync();
+        using var command = new MySqlCommand("SELECT * FROM nextips;", connection);
+        await using (var reader = await command.ExecuteReaderAsync())
+        {
+            while (await reader.ReadAsync())
+            {
+                ip = (int)reader.GetValue(0);
+                IP = IP_int2str(ip);
+                persistent = (bool)reader.GetValue(1);
+                Console.WriteLine("Using IP address: " + IP + ", persistent: " + Convert.ToString(persistent));
+                break;
+            }
+        }
+        string query = "";
+        if (persistent) //Incremental nat -> last rule. We don't delete it but just increment ip
+        {
+            query ="UPDATE nextips SET ipint=" + Convert.ToString(ip + 1) + " WHERE ipint=" + Convert.ToString(ip) + ";";
+            Console.WriteLine("Incrementing nextip value - "+query);
+        }
+        else //We need to remove this NAT record
+        {
+            query = "DELETE FROM nextips WHERE ipint=" + Convert.ToString(ip) + ";";          
+            Console.WriteLine("Removing nextip value - "+query);
+        }
+        //using var command2 = new MySqlCommand(query, connection);
+        //await command2.ExecuteNonQueryAsync();
+        command.CommandText = query;
+        await command.ExecuteNonQueryAsync();
+        //Add ip in the dnsrecords table
+        string dt = DateTime.Now.ToString("s");
+        dt=dt.Replace('T', ' ');
+        query = "SQL command: " + "INSERT INTO dnsrecords (aname, localIP, externalIP, ttl, lastupdated) VALUES (\"" + aname + "\", \"" + IP + "\", \"" + externalip + "\", 1, \"" + dt + "\");";
+        Console.WriteLine("Adding new line in dnsrecords table - "+query);
+        //using var SqlComm3 = new MySqlCommand("INSERT INTO dnsrecords (aname, localIP, externalIP, ttl, lastupdated) VALUES ('" + aname + "', '" + IP + "', '" + externalip + "', 1, '" + dt + "';", connection);
+        //await SqlComm3.ExecuteNonQueryAsync();
+        command.CommandText = query;
+        await command.ExecuteNonQueryAsync();
+        dnscache.AddCache(aname, IP, 1);
+        /////////////EXECUTE CODE FOR IP TABLES !!!!!!!!!!!!!!!!!!!!!!!!
+        return IP;
+    }
+
     static void Main(string[] args)
     {
         
@@ -90,7 +156,6 @@ class Nameserver
         rules = new Dnsrules(Constr);
         //Loading list of dns cache (overriden)
         dnscache = new DNSCache(Constr);
-        
         using (DnsServer server = new DnsServer(IPAddress.Any, MAX_UPD_CONNS, MAX_TCP_CONNS))
         {
             server.QueryReceived += OnQueryReceived;
@@ -104,7 +169,7 @@ class Nameserver
 
     static async Task OnQueryReceived(object sender, QueryReceivedEventArgs e)
     {
-        Console.WriteLine("Processing DNS query");
+        Console.WriteLine("Processing new DNS query...");
         string IPresponse = null;
         bool NeedToUpdateList = false;
         string UpdateToList = null;
@@ -127,6 +192,7 @@ class Nameserver
                     if (dname[dname.Length - 1] == '.') dname = dname.Substring(0, dname.Length - 1);
                     if (dname != null) if (dname.Contains("."))
                         {
+                            Console.WriteLine("Record name: "+dname);
                             //Check if dns name is found in local cache
                             if (dnscache._name.Contains(dname)) //Name matched local cache
                             {
@@ -214,11 +280,13 @@ class Nameserver
                                                 if (dname2[dname2.Length - 1] == '.') dname2 = dname2.Substring(0, dname2.Length - 1);
                                                 dnscache.AddCache(dname2, aRecord.Address.ToString(), aRecord.TimeToLive);
                                                 Console.WriteLine("Adding to local cache: name=" + dname2 + ", ip=" + aRecord.Address.ToString() + ", ttl=" + Convert.ToString(aRecord.TimeToLive));
-                                            } else
+                                            } else // DNS resolution succeeded. Need to add NAT
                                             {
                                                 //!!!!!!!!!!!!!!!Add code to translate IP
                                                 Console.WriteLine("DNS resolution successded. Translating IP to local...");
-                                                ARecord ar = new ARecord(DomainName.Parse(dname), 1, IPAddress.Parse("10.1.1.1"));
+                                                string newIP = await AddNATAsync(Constr, dname, aRecord.Address.ToString());
+                                                Console.WriteLine("New IP: "+newIP);
+                                                ARecord ar = new ARecord(DomainName.Parse(dname), 1, IPAddress.Parse(newIP));
                                                 response.AnswerRecords.Add(ar);
                                             }
                                             response.ReturnCode = ReturnCode.NoError;
