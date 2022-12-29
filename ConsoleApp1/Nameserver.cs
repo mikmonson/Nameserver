@@ -11,13 +11,14 @@ using System.Runtime.CompilerServices;
 using System.Xml.Linq;
 
 namespace dnsresolver;
- /// <summary>
- //TO DO:
- // 1. flush and recreate of NAT transactions via iptables on the application init
- // 2. update method to create NAT via iptables
- // 3. create periodic task to 1. delete local cache entries with expired ttl 2. track changes in dnsrules table to update data in dnscache object
- // 4. add logging
- /// </summary>
+/// <summary>
+//TO DO:
+// 1. flush and recreate of NAT transactions via iptables on the application init [in progress]
+// 2. update method to create NAT via iptables [in progress]
+// 3. create periodic task to 1). delete local cache entries with expired ttl 2). track changes in dnsrules table to update data in dnscache object
+// 4. change IP address in local cache to list to support multiple IPs
+// 5. add logging
+/// </summary>
 static public class Console
 {
     public const bool Logging = false;
@@ -42,7 +43,7 @@ class Dnsrules
         using var command = new MySqlCommand("SELECT * FROM dnsrules;", connection);
         using var reader = command.ExecuteReader();
         while (reader.Read())
-        {;
+        {
             string domain = (string)reader.GetValue(1);
             bool allowedsubdomains = (bool)reader.GetValue(2);
             Console.WriteLine("Domain="+domain+", allowed subdomains="+Convert.ToString(allowedsubdomains));
@@ -132,9 +133,9 @@ class DNSCache
 
 class Nameserver
 {
-    const string Constr = "Server=192.168.6.1;User ID=vScopeUserName;Password=password;Database=dns;";
-    const string DNSserver1 = "8.8.8.8";
-    const string BASH_PATH = "/home/mikmon/";
+    public static string Constr = "";//"Server=192.168.6.1;User ID=vScopeUserName;Password=password;Database=dns;";
+    public static string DNSserver1 = "";//"8.8.8.8";
+    public static string BASH_PATH = "";//"/home/mikmon/";
     const int MAX_UPD_CONNS = 1000;
     const int MAX_TCP_CONNS = 100;
     public const int DNS_TTL = 60;
@@ -221,8 +222,13 @@ class Nameserver
     static void Main(string[] args)
     {
         
-        Console.WriteLine("Starting DNS resolver...");
-        
+        System.Console.WriteLine("Starting DNS resolver...");
+        Console.WriteLine("Loading settings...");
+        System.Console.WriteLine(System.IO.Directory.GetCurrentDirectory());
+        string[] lines = System.IO.File.ReadAllLines(@"settings.txt");
+        Constr = lines[1];
+        DNSserver1 = lines[2];
+        BASH_PATH = lines[3];
         //Forming list of domains for override
         rules = new Dnsrules(Constr);
         //Loading list of dns cache (overriden) and calculating next usable ip for NAT

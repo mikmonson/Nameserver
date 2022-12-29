@@ -1,0 +1,4 @@
+Settings for Nameserver (SQL ConStr/)
+Server=192.168.6.1;User ID=vScopeUserName;Password=password;Database=dns;
+8.8.8.8
+/home/mikmon/
