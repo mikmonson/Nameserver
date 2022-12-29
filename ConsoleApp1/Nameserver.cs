@@ -223,10 +223,7 @@ class Nameserver
     {
         
         System.Console.WriteLine("Starting DNS resolver...");
-<<<<<<< HEAD
         if (args.Length > 0) if (args[0].Equals("-debug")) Console.Logging = true;
-=======
->>>>>>> bf59471d6c49ef13ac10b58c57cb0f71183f9b79
         Console.WriteLine("Loading settings...");
         System.Console.WriteLine(System.IO.Directory.GetCurrentDirectory());
         string[] lines = System.IO.File.ReadAllLines(@"settings.txt");
