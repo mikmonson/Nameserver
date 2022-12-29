@@ -21,7 +21,7 @@ namespace dnsresolver;
 /// </summary>
 static public class Console
 {
-    public const bool Logging = false;
+    public static bool Logging = false;
 
     static public void WriteLine (string s)
     {
@@ -152,15 +152,15 @@ class Nameserver
             {
                 proc.StartInfo.FileName = "/bin/bash";
                 proc.StartInfo.Arguments = "-c \" " + BASH_PATH + command + " \"";
-                //proc.StartInfo.UseShellExecute = false;
-                //proc.StartInfo.RedirectStandardOutput = true;
-                //proc.StartInfo.RedirectStandardError = true;
+                proc.StartInfo.UseShellExecute = false;
+                proc.StartInfo.RedirectStandardOutput = true;
+                proc.StartInfo.RedirectStandardError = true;
                 proc.Start();
 
                 //result += proc.StandardOutput.ReadToEnd();
                 //result += proc.StandardError.ReadToEnd();
 
-                //proc.WaitForExit();
+                proc.WaitForExit();
             }
         }
         catch
@@ -178,15 +178,15 @@ class Nameserver
             {
                 proc.StartInfo.FileName = "/bin/bash";
                 proc.StartInfo.Arguments = "-c \" " + BASH_PATH + command + " \"";
-                //proc.StartInfo.UseShellExecute = false;
-                //proc.StartInfo.RedirectStandardOutput = true;
-                //proc.StartInfo.RedirectStandardError = true;
+                proc.StartInfo.UseShellExecute = false;
+                proc.StartInfo.RedirectStandardOutput = true;
+                proc.StartInfo.RedirectStandardError = true;
                 proc.Start();
 
                 //result += proc.StandardOutput.ReadToEnd();
                 //result += proc.StandardError.ReadToEnd();
 
-                //proc.WaitForExit();
+                proc.WaitForExit();
             }
         }
         catch
@@ -223,6 +223,10 @@ class Nameserver
     {
         
         System.Console.WriteLine("Starting DNS resolver...");
+<<<<<<< HEAD
+        if (args.Length > 0) if (args[0].Equals("-debug")) Console.Logging = true;
+=======
+>>>>>>> bf59471d6c49ef13ac10b58c57cb0f71183f9b79
         Console.WriteLine("Loading settings...");
         System.Console.WriteLine(System.IO.Directory.GetCurrentDirectory());
         string[] lines = System.IO.File.ReadAllLines(@"settings.txt");
