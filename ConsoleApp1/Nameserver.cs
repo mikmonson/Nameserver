@@ -191,7 +191,7 @@ class Nameserver
         }
 
         //Now we need to check every dnscache record to see 1) if it needs to be deleted 2) if TTL expired
-        for (int i = dnscache._name.Count - 1; i >= 0; i++)
+        for (int i = dnscache._name.Count - 1; i >= 0; i--)
         {
             string str = dnscache._name[i];
             bool removed = false;
@@ -245,10 +245,11 @@ class Nameserver
             }
             if (!removed) //If record wasn't deleted by above code
             {
+                str = dnscache._name[i];
                 DateTime endTime = DateTime.Now;
                 TimeSpan span = endTime.Subtract(dnscache._lastupdated[i]);
-                Console2.WriteLine("Comparing TTL=" + Convert.ToString(dnscache._ttl[i]) + " for " + str + " with time passed since last update: " + Convert.ToString(endTime.Second));
-                if (span.Seconds > dnscache._ttl[i])
+                Console2.WriteLine("Comparing TTL=" + Convert.ToString(dnscache._ttl[i]) + " for " + str + " with time passed since last update: " + Convert.ToString(span.TotalSeconds));
+                if (span.TotalSeconds > dnscache._ttl[i])
                 {
                     //Refreshing DNS entry
                     Console2.WriteLine("DNS record update is required! Initiating DNS request...");
@@ -362,7 +363,7 @@ class Nameserver
 
             //!!! Add commands for adding and removing DB records, clearing tables/lists.
             //Loop to read commands
-            string s = "stat";
+            string s = "show cache";
             while (!s.Equals("quit"))
             {
                 Console2.WriteLineCritical("Type one of the following: 'show cache' to view dns cache, 'debug' to turn on/off debugging, 'quit' to stop the app, 'show rules' to view dns rules, 'add rule' or 'delete rule' to create/delete dns rule, 'refresh' to update dns cache, 'flush cache' to clear all dns cache.'");
@@ -375,7 +376,7 @@ class Nameserver
                     }
                     Console2.WriteLineCritical("Total cache records: " + Convert.ToString(dnscache._name.Count) + ". Next IP for local NAT: " + dnscache.nextip);
                 }
-                if (s.Equals("show rules")) //Show dns rules
+                else if (s.Equals("show rules")) //Show dns rules
                 {
                     for (int i = 0; i < rules.domains.Count; i++)
                     {
@@ -439,6 +440,7 @@ class Nameserver
                 }
                 else if (s.Equals("refresh")) //Refresh DNS rules, dnscache and TTL
                 {
+                    Console2.WriteLineCritical("Starting refresh of dns cache... Enable debug to see details.");
                     CompareDNSrules();
                 }
                 else if (s.Equals("flush cache")) //Delete all NAT rules and local dnscache
@@ -451,7 +453,7 @@ class Nameserver
                     DeleteNAT();
                     //Resetting next ip for nat
                     dnscache.nextip = "10.0.0.1";
-                } else Console2.WriteLineCritical("Inpun is not recognized");
+                } else Console2.WriteLineCritical("Input was not recognized");
                 s = System.Console.ReadLine();
             }
         }
