@@ -115,7 +115,7 @@ class Nameserver
         Console2.WriteLine("Make SQL query to delete record with NAT in dnsrecords table");
         string dt = DateTime.Now.ToString("s");
         dt = dt.Replace('T', ' ');
-        string query = "DELETE FROM dnsrecords WHERE aname='" + aname + "' and localIP='" + IP + "');";
+        string query = "DELETE FROM dnsrecords WHERE aname='" + aname + "' and localIP='" + IP + "';";
         Console2.WriteLine(query);
         using var connection1 = new MySqlConnection(constr);
         connection1.Open();
@@ -140,8 +140,10 @@ class Nameserver
     //Compare records in local cache with DB and checking expired TTL
     private static void CompareDNSrules()
     {
+        
+        //The below code is to track changes in SQL DB if local dnsrules were not changed.
         //Make SQL query to check dns rules for overriding
-        Console2.WriteLine("Making SQL query to dnsrules table...");
+        Console2.WriteLine("Loading data from DB table dnsrules and comparing to local dnsrules list...");
         List<string> _domains = new List<string>();
         List<bool> _subdomains = new List<bool>();
         List<string> del_domains = new List<string>(); //To delete absolete
@@ -162,25 +164,23 @@ class Nameserver
                 if (rules.subdomains[rules.domains.IndexOf(domain)] != allowedsubdomains) // If subdomain value was changed
                 {
                     rules.subdomains[rules.domains.IndexOf(domain)] = allowedsubdomains;
-                    if (allowedsubdomains == false)
-                    {
-                        del_domains.Add(domain);
-                        del_subdomains.Add(true);
-                    }
+                    //If allowedsubdomains flag was changed we won't touch existing records. Need to do manual flush of cache.
                 }
             }
             else // If some rules were added in DB and need to be added in dnsrules list -> no changes in dnscache/nat
             {
                 rules.domains.Add(domain);
                 rules.subdomains.Add(allowedsubdomains);
+                Console2.WriteLine("Domains for addition: " + domain + " - Allowed subdomains: "+Convert.ToString(allowedsubdomains));
             }
         }
         if (rules.domains.Count > _domains.Count) //If some dns rules were removed from the DB and need to be deleted from dnsrules list
         {
             for (int i = rules.domains.Count - 1; i >= 0; i--) //Back loop for all elements to be able removing elements from the same list
             {
-                if (!_domains.Contains(rules.domains[i]))
+                if (!_domains.Contains(rules.domains[i])) //If DB is missing a record from dnsrules -> record was removed
                 {
+                    Console2.WriteLine("Domains for deletion: " + rules.domains[i] + " - Allowed subdomains: "+ rules.subdomains[i]);
                     del_domains.Add(rules.domains[i]);
                     del_subdomains.Add(rules.subdomains[i]);
                     rules.domains.RemoveAt(i);
@@ -189,14 +189,13 @@ class Nameserver
             }
 
         }
-
+        
         //Now we need to check every dnscache record to see 1) if it needs to be deleted 2) if TTL expired
         for (int i = dnscache._name.Count - 1; i >= 0; i--)
         {
             string str = dnscache._name[i];
             bool removed = false;
             string resolvedip;
-
 
             if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local IP
             {
@@ -287,7 +286,7 @@ class Nameserver
                             if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local record needs to be refreshed
                             {
                                 string _nextip = dnscache.nextip;
-                                nextip = DNSCache.GetNextIpAddress(nextip, 1);
+                                nextip = dnscache.GetNextIpAddress(nextip, 1);
                                 AddNAT(_nextip, newip); //We add new NAT but retain old NAT to keep existing connections
                                 DeleteDNSrecord(Constr, str, dnscache._localip[i]); //Update DNS record in DB by removing old record and inserving new record
                                 AddDNSrecord(Constr, str, _nextip, newip, dnscache._ttl[i]);
@@ -366,94 +365,103 @@ class Nameserver
             string s = "show cache";
             while (!s.Equals("quit"))
             {
-                Console2.WriteLineCritical("Type one of the following: 'show cache' to view dns cache, 'debug' to turn on/off debugging, 'quit' to stop the app, 'show rules' to view dns rules, 'add rule' or 'delete rule' to create/delete dns rule, 'refresh' to update dns cache, 'flush cache' to clear all dns cache.'");
+                //try
+                {
+                    Console2.WriteLineCritical("Type one of the following: 'show cache' to view dns cache, 'debug' to turn on/off debugging, 'quit' to stop the app, 'show rules' to view dns rules, 'add rule' or 'delete rule' to create/delete dns rule, 'refresh' to update dns cache, 'flush cache' to clear all dns cache.'");
 
-                if (s.Equals("show cache")) //Show local cache statistics
-                {
-                    for (int i = 0; i < dnscache._name.Count; i++)
+                    if (s.Equals("show cache")) //Show local cache statistics
                     {
-                        Console2.WriteLineCritical(dnscache._name[i] + " - " + dnscache._localip[i] + " - " + dnscache._ttl[i]);
-                    }
-                    Console2.WriteLineCritical("Total cache records: " + Convert.ToString(dnscache._name.Count) + ". Next IP for local NAT: " + dnscache.nextip);
-                }
-                else if (s.Equals("show rules")) //Show dns rules
-                {
-                    for (int i = 0; i < rules.domains.Count; i++)
-                    {
-                        Console2.WriteLineCritical(Convert.ToString(i + 1) + " - " + rules.domains[i] + " - Allowed subdomains: " + rules.subdomains[i]);
-                    }
-                    Console2.WriteLineCritical("Total dns rules: " + Convert.ToString(rules.domains.Count) + ". Next IP for local NAT: " + dnscache.nextip);
-                }
-                else if (s.Equals("debug")) //Enable/disable debugging
-                {
-                    Console2.Debugging = !Console2.Debugging;
-                    Console2.WriteLineCritical("System debug = " + Console2.Debugging.ToString());
-                }
-                else if (s.Equals("add rule")) //Add dns rule
-                {
-                    string domain = "";
-                    bool _allowedsubdomains = false;
-                    Console2.WriteLineCritical("Enter domain name:");
-                    domain = System.Console.ReadLine();
-                    Console2.WriteLineCritical("Type yes to allow subdomains. Any other input will mean no.");
-                    if (System.Console.ReadLine().Equals("yes"))
-                    {
-                        _allowedsubdomains = true;
-                    }
-                    if (domain.Length >= 4) if (domain.IndexOf('.') > 0)
+                        for (int i = 0; i < dnscache._name.Count; i++)
                         {
-                            if (rules.domains.Contains(domain))
-                            {
-                                Console2.WriteLineCritical("DNS rule with this name already exists!");
-                            }
-                            else
-                            {
-                                //Adding new dns rule
-                                rules.AddRule(Constr, domain, _allowedsubdomains);
-                                Console2.WriteLineCritical("DNS rule has been added. Type refresh to update cache.");
-                            }
+                            Console2.WriteLineCritical(dnscache._name[i] + " - " + dnscache._localip[i] + " - " + dnscache._ttl[i]);
                         }
-                        else //Wrong input
+                        Console2.WriteLineCritical("Total cache records: " + Convert.ToString(dnscache._name.Count) + ". Next IP for local NAT: " + dnscache.nextip);
+                    }
+                    else if (s.Equals("show rules")) //Show dns rules
+                    {
+                        for (int i = 0; i < rules.domains.Count; i++)
+                        {
+                            Console2.WriteLineCritical(Convert.ToString(i + 1) + " - " + rules.domains[i] + " - Allowed subdomains: " + rules.subdomains[i]);
+                        }
+                        Console2.WriteLineCritical("Total dns rules: " + Convert.ToString(rules.domains.Count) + ". Next IP for local NAT: " + dnscache.nextip);
+                    }
+                    else if (s.Equals("debug")) //Enable/disable debugging
+                    {
+                        Console2.Debugging = !Console2.Debugging;
+                        Console2.WriteLineCritical("System debug = " + Console2.Debugging.ToString());
+                    }
+                    else if (s.Equals("add rule")) //Add dns rule
+                    {
+                        string domain = "";
+                        bool _allowedsubdomains = false;
+                        Console2.WriteLineCritical("Enter domain name:");
+                        domain = System.Console.ReadLine();
+                        Console2.WriteLineCritical("Type yes to allow subdomains. Any other input will mean no.");
+                        if (System.Console.ReadLine().Equals("yes"))
+                        {
+                            _allowedsubdomains = true;
+                        }
+                        if (domain.Length >= 4) if (domain.IndexOf('.') > 0)
+                            {
+                                if (rules.domains.Contains(domain))
+                                {
+                                    Console2.WriteLineCritical("DNS rule with this name already exists!");
+                                }
+                                else
+                                {
+                                    //Adding new dns rule
+                                    rules.AddRule(Constr, domain, _allowedsubdomains);
+                                    Console2.WriteLineCritical("DNS rule has been added.");
+                                }
+                            }
+                            else //Wrong input
+                            {
+                                Console2.WriteLineCritical("Wrong input!");
+                            }
+
+                    }
+                    else if (s.Equals("delete rule")) //Delete dns rule
+                    {
+                        Console2.WriteLineCritical("Choose rule number: 1.." + Convert.ToString(rules.domains.Count) + " to delete");
+                        int rnum = 0;
+                        try
+                        {
+                            rnum = Convert.ToInt16(System.Console.ReadLine());
+                        }
+                        catch { };
+                        if ((rnum <= 0) || (rnum > rules.domains.Count))
                         {
                             Console2.WriteLineCritical("Wrong input!");
                         }
-
-                }
-                else if (s.Equals("delete rule")) //Delete dns rule
-                {
-                    Console2.WriteLineCritical("Choose rule number: 1.." + Convert.ToString(rules.domains.Count) + " to delete");
-                    int rnum = 0;
-                    try
-                    {
-                        rnum = Convert.ToInt16(System.Console.ReadLine());
+                        else //Removing rule
+                        {
+                            rules.DeleteRule(Constr, rnum - 1,false);
+                            Console2.WriteLineCritical("DNS rule has been deleted from DB. Starting DNS cache refresh...");
+                            CompareDNSrules();
+                        }
                     }
-                    catch { };
-                    if ((rnum <= 0) || (rnum > rules.domains.Count))
+                    else if (s.Equals("refresh")) //Refresh DNS rules, dnscache and TTL
                     {
-                        Console2.WriteLineCritical("Wrong input!");
+                        Console2.WriteLineCritical("Starting refresh of dns cache... Enable debug to see details.");
+                        CompareDNSrules();
                     }
-                    else //Removing rule
+                    else if (s.Equals("flush cache")) //Delete all NAT rules and local dnscache
                     {
-                        rules.DeleteRule(Constr, rnum-1);
-                        Console2.WriteLineCritical("DNS rule has been added. Type refresh to update cache.");
+                        //Flushing dns cached records in DB
+                        FlushDNSrecords(Constr);
+                        //Removing all cache
+                        dnscache.FlushCache();
+                        //Flushing nat rules in iptables
+                        DeleteNAT();
+                        //Resetting next ip for nat
+                        dnscache.nextip = "10.0.0.1";
                     }
+                    else Console2.WriteLineCritical("Input was not recognized");
                 }
-                else if (s.Equals("refresh")) //Refresh DNS rules, dnscache and TTL
-                {
-                    Console2.WriteLineCritical("Starting refresh of dns cache... Enable debug to see details.");
-                    CompareDNSrules();
-                }
-                else if (s.Equals("flush cache")) //Delete all NAT rules and local dnscache
-                {
-                    //Flushing dns cached records in DB
-                    FlushDNSrecords(Constr);
-                    //Removing all cache
-                    dnscache.FlushCache();
-                    //Flushing nat rules in iptables
-                    DeleteNAT();
-                    //Resetting next ip for nat
-                    dnscache.nextip = "10.0.0.1";
-                } else Console2.WriteLineCritical("Input was not recognized");
+                //catch (Exception e)
+                //{
+                //    Console2.WriteLineCritical("Error occurred - "+e.ToString());
+                //}
                 s = System.Console.ReadLine();
             }
         }
@@ -607,26 +615,37 @@ class Nameserver
                                     if (record is ARecord aRecord)
                                     {
                                         Console2.WriteLine("Response: " + aRecord.Address.ToString());
-                                        if (NeedToUpdateList == false) //DNS resolution successded. No need to translate the record
+                                        if (!dnscache.IsInCache(dname)) //Check if same record for some reason already exists in cache - it might be created within another DNS query which ran almost in parallel
                                         {
-                                            Console2.WriteLine("DNS resolution succeeded. No need to translate the record");
-                                            response.AnswerRecords.Add(record);
-                                            dnscache.AddCache(dname, aRecord.Address.ToString(), "", aRecord.TimeToLive);
-                                            Console2.WriteLine("Adding to local cache: name=" + dname + ", ip=" + aRecord.Address.ToString() + ", ttl=" + Convert.ToString(aRecord.TimeToLive));
-                                        }
-                                        else // DNS resolution succeeded. Need to add NAT
+                                            if (NeedToUpdateList == false) //DNS resolution successded. No need to translate the record
+                                            {
+                                                Console2.WriteLine("DNS resolution succeeded. No need to translate the record");
+                                                response.AnswerRecords.Add(record);
+                                                dnscache.AddCache(dname, aRecord.Address.ToString(), "", aRecord.TimeToLive);
+                                                Console2.WriteLine("Adding to local cache: name=" + dname + ", ip=" + aRecord.Address.ToString() + ", ttl=" + Convert.ToString(aRecord.TimeToLive));
+                                            }
+                                            else // DNS resolution succeeded. Need to add NAT
+                                            {
+                                                Console2.WriteLine("DNS resolution succeded. Translating IP to local...");
+                                                string _nextip = nextip;
+                                                nextip = dnscache.GetNextIpAddress(nextip, 1); //Incrementing next usabgle IP address
+                                                Console2.WriteLine("New IP: " + _nextip);
+                                                req_ttl = Math.Max(aRecord.TimeToLive, DNS_TTL);
+                                                dnscache.AddCache(dname, _nextip, aRecord.Address.ToString(), req_ttl);
+                                                needtoaddnat = _nextip; //Will update dnsrecords table in the end of the task.
+                                                needtoupdatenat_external = aRecord.Address.ToString();
+                                                var task1 = AddNatAsync(needtoaddnat, needtoupdatenat_external); //Run syncroneously not to delay the response
+                                                milliseconds = Console2.Benchmark(milliseconds, 5);
+                                                ARecord ar = new ARecord(DomainName.Parse(dname), 60, IPAddress.Parse(_nextip));
+                                                response.AnswerRecords.Add(ar);
+                                                milliseconds = Console2.Benchmark(milliseconds, 6);
+                                            }
+                                        } else //If record was already added in cache/DB by another parralel query
                                         {
-                                            Console2.WriteLine("DNS resolution successded. Translating IP to local...");
-                                            string _nextip = nextip;
-                                            nextip = DNSCache.GetNextIpAddress(nextip, 1); //Incrementing next usabgle IP address
-                                            Console2.WriteLine("New IP: " + _nextip);
-                                            req_ttl = Math.Max(aRecord.TimeToLive, DNS_TTL);
-                                            dnscache.AddCache(dname, _nextip, aRecord.Address.ToString(), req_ttl);
-                                            needtoaddnat = _nextip; //Will update dnsrecords table in the end of the task.
-                                            needtoupdatenat_external = aRecord.Address.ToString();
-                                            var task1 = AddNatAsync(needtoaddnat, needtoupdatenat_external); //Run syncroneously not to delay the response
-                                            milliseconds = Console2.Benchmark(milliseconds, 5);
-                                            ARecord ar = new ARecord(DomainName.Parse(dname), 60, IPAddress.Parse(_nextip));
+                                            Console2.WriteLine("DNS resolution succeded. But record already exists in cache/DB.");
+                                            needtoaddnat = null;
+                                            NeedToUpdateList = false;
+                                            ARecord ar = new ARecord(DomainName.Parse(dname), 60, IPAddress.Parse(dnscache.GetlocalIP(dname)));
                                             response.AnswerRecords.Add(ar);
                                             milliseconds = Console2.Benchmark(milliseconds, 6);
                                         }

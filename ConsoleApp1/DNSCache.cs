@@ -19,12 +19,13 @@ namespace Nameserver
         public List<int> _ttl = new List<int>();
         public string nextip = "10.0.0.1";
 
-        public static string GetNextIpAddress(string ipAddress, uint increment)
+        public string GetNextIpAddress(string ipAddress, uint increment)
         {
             byte[] addressBytes = IPAddress.Parse(ipAddress).GetAddressBytes().Reverse().ToArray();
             uint ipAsUint = BitConverter.ToUInt32(addressBytes, 0);
             var nextAddress = BitConverter.GetBytes(ipAsUint + increment);
-            return String.Join(".", nextAddress.Reverse());
+            nextip= String.Join(".", nextAddress.Reverse());
+            return nextip;
         }
         public DNSCache(string constr)
         {
@@ -62,25 +63,22 @@ namespace Nameserver
             Console2.WriteLine("Max local IP address is " + MAXIP + ". Next IP address is " + nextip);
 
         }
+        public bool IsInCache(string __name) //Checks if record already exists in the DNS cache
+        {
+            return _name.Contains(__name);
+        }
+        public string GetlocalIP(string __name) //Checks local IP in DNS cache
+        {
+            return _localip[_name.IndexOf(__name)];
+        }
+
         public void AddCache(string __name, string __localip, string __externalip, int __ttl) // Adds new record in local cache
         {
-            if (_name.Contains(__name))
-            {
-                int ind = _name.IndexOf(__name);
-                //_name[ind]=__name;
-                _localip[ind] = __localip;
-                _externalip[ind] = __externalip;
-                _ttl[ind] = __ttl;
-                _lastupdated[ind] = DateTime.Now;
-            }
-            else
-            {
-                _name.Add(__name);
-                _localip.Add(__localip);
-                _externalip.Add(__externalip);
-                _ttl.Add(__ttl);
-                _lastupdated.Add(DateTime.Now);
-            }
+            _name.Add(__name);
+            _localip.Add(__localip);
+            _externalip.Add(__externalip);
+            _ttl.Add(__ttl);
+            _lastupdated.Add(DateTime.Now);
         }
         public void RemoveCache(int ind)
         {

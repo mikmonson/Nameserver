@@ -48,7 +48,7 @@ namespace Nameserver
             subdomains.Add(allowedsubdomains);
         }
 
-        public void DeleteRule(string constr, int ind) //Remove rule from DB
+        public void DeleteRule(string constr, int ind, bool updatednsrules) //Remove rule from DB
         {
             //Make SQL query to delete DNS rule;
             string aname = domains[ind];
@@ -59,9 +59,12 @@ namespace Nameserver
             connection1.Open();
             using var command1 = new MySqlCommand(query, connection1);
             command1.ExecuteNonQuery();
-            //Removing record from the lists
-            domains.RemoveAt(ind);
-            subdomains.RemoveAt(ind);
+            if (updatednsrules)
+            {
+                //Removing record from the lists
+                domains.RemoveAt(ind);
+                subdomains.RemoveAt(ind);
+            }
         }
 
     }
