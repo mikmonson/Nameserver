@@ -191,16 +191,21 @@ class Nameserver
         }
         
         //Now we need to check every dnscache record to see 1) if it needs to be deleted 2) if TTL expired
-        for (int i = dnscache._name.Count - 1; i >= 0; i--)
+        //for (int i = dnscache._name.Count - 1; i >= 0; i--)
+        foreach (string dn in dnscache.GetNames())
         {
-            string str = dnscache._name[i];
+            //string str = dnscache._name[i];
             bool removed = false;
-            string resolvedip;
-
-            if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local IP
+            string resolvedip= dnscache.GetremoteIP(dn);
+            string localip = dnscache.GetlocalIP(dn);
+            int ttl = dnscache.Getttl(dn);
+            DateTime lastupdated = dnscache.Getlastupdated(dn);
+            //if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local IP
+            if (localip.Substring(0, 3).Equals("10.")) //If local IP
             {
-                resolvedip = dnscache._externalip[i];
+                //resolvedip = dnscache._externalip[i];
                 int iter = 0;
+                string str = dn;
                 while (str.Contains('.'))
                 {
                     Console2.WriteLine("Checking subdomains of " + str + " against dnsrules for removal...");
@@ -211,7 +216,8 @@ class Nameserver
                         {
                             Console2.WriteLine("Explicit hit - domain/subdomain " + str + " matches one of dnsrules for removal.");
                             //remove domain -> we keep NAT unchanged to retain existing connections
-                            dnscache.RemoveCache(i);
+                            //dnscache.RemoveCache(i);
+                            dnscache.RemoveCache(str);
                             removed = true;
                         }
                         else
@@ -220,7 +226,8 @@ class Nameserver
                             {
                                 Console2.WriteLine("Allowed hit for subdomain " + str + " for removal");
                                 //remove subdomain -> we keep NAT unchanged to retain existing connections
-                                dnscache.RemoveCache(i);
+                                //dnscache.RemoveCache(i);
+                                dnscache.RemoveCache(str);
                                 removed = true;
                             }
                             else
@@ -240,20 +247,26 @@ class Nameserver
             }
             else //If this is external record
             {
-                resolvedip = dnscache._localip[i];
+                //resolvedip = dnscache._localip[i];
+                resolvedip = localip;
             }
             if (!removed) //If record wasn't deleted by above code
             {
-                str = dnscache._name[i];
+                //str = dnscache._name[i];
+                string str = dn;
                 DateTime endTime = DateTime.Now;
-                TimeSpan span = endTime.Subtract(dnscache._lastupdated[i]);
-                Console2.WriteLine("Comparing TTL=" + Convert.ToString(dnscache._ttl[i]) + " for " + str + " with time passed since last update: " + Convert.ToString(span.TotalSeconds));
-                if (span.TotalSeconds > dnscache._ttl[i])
+                //TimeSpan span = endTime.Subtract(dnscache._lastupdated[i]);
+                TimeSpan span = endTime.Subtract(lastupdated);
+                //Console2.WriteLine("Comparing TTL=" + Convert.ToString(dnscache._ttl[i]) + " for " + str + " with time passed since last update: " + Convert.ToString(span.TotalSeconds));
+                Console2.WriteLine("Comparing TTL=" + Convert.ToString(ttl) + " for " + str + " with time passed since last update: " + Convert.ToString(span.TotalSeconds));
+                //if (span.TotalSeconds > dnscache._ttl[i])
+                if (span.TotalSeconds > ttl)
                 {
                     //Refreshing DNS entry
                     Console2.WriteLine("DNS record update is required! Initiating DNS request...");
                     removed = true;
                     string newip = null;
+                    int newttl = DNS_TTL;
                     DnsMessage upstreamResponse2 = DNSRequest(DomainName.Parse(str), RecordType.A, RecordClass.INet);
                     if ((upstreamResponse2 == null) || ((upstreamResponse2.ReturnCode != ReturnCode.NoError) && (upstreamResponse2.ReturnCode != ReturnCode.NxDomain)))
                     {
@@ -274,6 +287,7 @@ class Nameserver
                                 else
                                 {
                                     newip = aRecord.Address.ToString(); //If no match we store resolved IP (will be used below)
+                                    newttl = Math.Max(DNS_TTL,aRecord.TimeToLive); //If not match we store resolved TTL
                                 }
 
                             }
@@ -283,30 +297,38 @@ class Nameserver
                     {
                         if (newip != null)
                         {
-                            if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local record needs to be refreshed
+                            //if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local record needs to be refreshed
+                            if (localip.Substring(0, 3).Equals("10.")) //If local record needs to be refreshed
                             {
                                 string _nextip = dnscache.nextip;
                                 nextip = dnscache.GetNextIpAddress(nextip, 1);
                                 AddNAT(_nextip, newip); //We add new NAT but retain old NAT to keep existing connections
-                                DeleteDNSrecord(Constr, str, dnscache._localip[i]); //Update DNS record in DB by removing old record and inserving new record
-                                AddDNSrecord(Constr, str, _nextip, newip, dnscache._ttl[i]);
-                                dnscache._externalip[i] = newip;
-                                dnscache._localip[i] = _nextip;
-                                dnscache._lastupdated[i] = DateTime.Now;
+                                //DeleteDNSrecord(Constr, str, dnscache._localip[i]); //Update DNS record in DB by removing old record and inserving new record
+                                DeleteDNSrecord(Constr, str, localip); //Update DNS record in DB by removing old record and inserving new record
+                                //AddDNSrecord(Constr, str, _nextip, newip, dnscache._ttl[i]);
+                                AddDNSrecord(Constr, str, _nextip, newip, newttl);
+                                //dnscache._externalip[i] = newip;
+                                //dnscache._localip[i] = _nextip;
+                                //dnscache._lastupdated[i] = DateTime.Now;
+                                dnscache.ChangeCache(str, _nextip, newip, newttl, DateTime.Now);
                             }
                             else //If external record needs to be refreshed
                             {
-                                dnscache._localip[i] = newip;
-                                dnscache._lastupdated[i] = DateTime.Now;
+                                //dnscache._localip[i] = newip;
+                                //dnscache._lastupdated[i] = DateTime.Now;
+                                dnscache.ChangeCache(str, newip, newip, newttl, DateTime.Now);
                             }
                         }
                         else //If DNS resolution failed we just remove expired record
                         {
-                            if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local record need to update DB "dnsrecords"
+                            //if (dnscache._localip[i].Substring(0, 3).Equals("10.")) //If local record need to update DB "dnsrecords"
+                            if (localip.Substring(0, 3).Equals("10.")) //If local record need to update DB "dnsrecords"
                             {
-                                DeleteDNSrecord(Constr, str, dnscache._localip[i]);
+                                //DeleteDNSrecord(Constr, str, dnscache._localip[i]);
+                                DeleteDNSrecord(Constr, str, localip);
                             }
-                            dnscache.RemoveCache(i);
+                            //dnscache.RemoveCache(i);
+                            dnscache.RemoveCache(str);
                         }
                     }
                 }
@@ -315,6 +337,7 @@ class Nameserver
 
 
         }
+        Console2.WriteLine("DNS cache refresh has finished.");
 
     }
 
@@ -337,9 +360,11 @@ class Nameserver
 
         //Flushing and recreating nat rules in iptables
         DeleteNAT();
-        for (int ind = 0; ind < dnscache._name.Count; ind++)
+        //for (int ind = 0; ind < dnscache._name.Count; ind++)
+        foreach (string dn in dnscache.GetNames())
         {
-            AddNAT(dnscache._localip[ind], dnscache._externalip[ind]);
+            //AddNAT(dnscache._localip[ind], dnscache._externalip[ind]);
+            AddNAT(dnscache.GetlocalIP(dn), dnscache.GetremoteIP(dn));
         }
 
         //Starting a task on the background to check ttl of cached records, remove outdated records and compare dns cache to DB in case any changes were made in DB.
@@ -371,11 +396,12 @@ class Nameserver
 
                     if (s.Equals("show cache")) //Show local cache statistics
                     {
-                        for (int i = 0; i < dnscache._name.Count; i++)
+                        //for (int i = 0; i < dnscache._name.Count; i++)
+                        foreach (string dn in dnscache.GetNames())
                         {
-                            Console2.WriteLineCritical(dnscache._name[i] + " - " + dnscache._localip[i] + " - " + dnscache._ttl[i]);
+                            Console2.WriteLineCritical(dn + " - " + dnscache.GetlocalIP(dn) + " - " + dnscache.Getttl(dn));
                         }
-                        Console2.WriteLineCritical("Total cache records: " + Convert.ToString(dnscache._name.Count) + ". Next IP for local NAT: " + dnscache.nextip);
+                        Console2.WriteLineCritical("Total cache records: " + Convert.ToString(dnscache.GetCount()) + ". Next IP for local NAT: " + dnscache.nextip);
                     }
                     else if (s.Equals("show rules")) //Show dns rules
                     {
@@ -541,10 +567,12 @@ class Nameserver
                     {
                         Console2.WriteLine("Record name: " + dname);
                         //Check if dns name is found in local cache
-                        if (dnscache._name.Contains(dname)) //Name matched local cache
+                        //if (dnscache._name.Contains(dname)) //Name matched local cache
+                        if (dnscache.IsInCache(dname)) //Name matched local cache
                         {
                             Console2.WriteLine("Cache found for " + dname);
-                            string LocalIP = dnscache._localip[dnscache._name.IndexOf(dname)];
+                            //string LocalIP = dnscache._localip[dnscache._name.IndexOf(dname)];
+                            string LocalIP = dnscache.GetlocalIP(dname);
                             Console2.WriteLine("Local IP is " + LocalIP);
                             IPresponse = LocalIP;
                             response.ReturnCode = ReturnCode.NoError;
