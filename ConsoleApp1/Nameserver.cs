@@ -358,6 +358,7 @@ class Nameserver
         dnscache = new DNSCache(Constr);
         nextip = dnscache.nextip;
 
+        Console2.WriteLineCritical("Resetting NAT rules (ip tables)...");
         //Flushing and recreating nat rules in iptables
         DeleteNAT();
         //for (int ind = 0; ind < dnscache._name.Count; ind++)
@@ -367,6 +368,7 @@ class Nameserver
             AddNAT(dnscache.GetlocalIP(dn), dnscache.GetremoteIP(dn));
         }
 
+        Console2.WriteLine("Scheduling cache refresh task...");
         //Starting a task on the background to check ttl of cached records, remove outdated records and compare dns cache to DB in case any changes were made in DB.
         Task.Factory.StartNew(() =>
         {
@@ -380,6 +382,7 @@ class Nameserver
         });
 
         //Starting DNS server
+        Console2.WriteLineCritical("Starting DNS server...");
         using (DnsServer server = new DnsServer(IPAddress.Any, MAX_UPD_CONNS, MAX_TCP_CONNS))
         {
             server.QueryReceived += OnQueryReceived;
