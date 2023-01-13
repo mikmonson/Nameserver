@@ -344,8 +344,8 @@ class Nameserver
     static private void MainLoop()
     {
         //Loading settings
-        Console2.WriteLine("Loading settings...");
-        Console2.WriteLineCritical(System.IO.Directory.GetCurrentDirectory());
+        Console2.WriteLineCritical("Loading settings...");
+        Console2.WriteLine(System.IO.Directory.GetCurrentDirectory()+"settings.txt");
         string[] lines = System.IO.File.ReadAllLines(@"settings.txt");
         Constr = lines[1];
         DNSserver1 = lines[2];
